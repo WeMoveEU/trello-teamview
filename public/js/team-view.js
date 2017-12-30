@@ -24,22 +24,43 @@ window.TeamView = {
   },
 
   doSync: function(trello) {
-    return trello.get('member', 'shared', 'teamview_list')
-    .then(function(list) {
-      return new Promise(function(resolve, reject) {
-        console.log('Creating card...');
-        Trello.post('/cards', 
-          {
-            idList: list.id,
-            name: 'Test card'
-          },
-          resolve,
-          reject
-        );
+    var memberId = null;
+    return Promise.all([
+      trello.member('id'),
+      trello.organization('id')
+    ])
+    .then(function(values) {
+      var member = values[0],
+          team = values[1];
+      var memberCards = new Promise(function(resolve, reject) {
+        Trello.get('/members/' + member.id + '/cards', resolve, reject);
       });
+      var teamBoards = new Promise(function(resolve, reject) {
+        Trello.get('/organizations/' + team.id + '/boards', resolve, reject);
+      });
+      return Promise.all([
+        memberCards,
+        teamBoards,
+        trello.get('member', 'shared', 'teamview_list')
+      ]);
     })
-    .then(function (card) {
-      console.log(card);
+    .then(function (values) {
+      var cards = values[0],
+          boards = values[1],
+          list = values[2];
+      var boardIds = boards.map(function(b) { return b.id; });
+      var teamCards = cards.filter(function(c) { return boardIds.includes(c.idBoard); });
+      return Promise.all(teamCards.map(function(card) {
+        return new Promise(function(resolve, reject) {
+          Trello.post('/cards',
+            { idList: list.id, name: card.name },
+            resolve, reject
+          );
+        });
+      }));
+    })
+    .catch(function() {
+      console.error(arguments);
     });
   },
 

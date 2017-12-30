@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" href="https://p.trellocdn.com/power-up.min.css">
+    <script src="https://p.trellocdn.com/power-up.min.js"></script>
+    <script src="https://code.jquery.com/jquery-2.2.4.min.js"></script>
+    <script src="https://trello.com/1/client.js?key=API_KEY"></script>
+    <script src="./js/team-view.js"></script>
+  </head>
+  <body>
+    <h1>
+      Hey there! 
+    </h1>
+    <p>
+      To make full use of our Power-Up, we're going to need you to authorize us to access your Trello account!
+    </p>
+    <button id="auth-btn" type="submit" class="mod-primary">Authorize Access To Trello</button>
+    
+    <script>
+      var t = TrelloPowerUp.iframe();
+
+      document.getElementById('auth-btn').addEventListener('click', function(){
+        Trello.authorize({
+          type: 'popup',
+          name: 'TeamView',
+          scope: { read: true, write: true },
+          expiration: 'never',
+          success: function() {
+            TeamView.syncView(t);
+          },
+          error: function() {
+            console.log(arguments);
+            t.closePopup();
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
+
+

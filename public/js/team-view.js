@@ -44,6 +44,16 @@ window.TeamView = {
     ]);
   },
 
+  getExistingIds: function(trello, list) {
+    return trello.lists('all')
+    .then(function(lists) {
+      var existingCards = lists.find(function(l) { return l.id == list.id}).cards;
+      return Promise.all(existingCards.map(function(card) {
+        return trello.get(card.id, 'shared', 'teamview_syncedId');
+      }));
+    });
+  },
+
   createCards: function(list, cardsToCreate) {
     return Promise.all(cardsToCreate.map(function(card) {
       return new Promise(function(resolve, reject) {
@@ -67,7 +77,6 @@ window.TeamView = {
   },
 
   doSync: function(trello) {
-    var cardsToCreate = null;
     return TeamView.getContext(trello)
     .then(function(values) {
       var member = values[0],
@@ -79,11 +88,16 @@ window.TeamView = {
           boards = values[1],
           list = values[2];
       var boardIds = boards.map(function(b) { return b.id; });
-      cardsToCreate = cards.filter(function(c) { return boardIds.includes(c.idBoard); });
-      return TeamView.createCards(list, cardsToCreate);
-    })
-    .then(function(newCards) {
-      return TeamView.storeSyncedIds(trello, newCards, cardsToCreate);
+      return TeamView.getExistingIds(trello, list)
+      .then(function(existingIds) {
+        var cardsToCreate = cards.filter(function(c) { 
+          return boardIds.includes(c.idBoard) && !existingIds.includes(c.id);
+        });
+        return TeamView.createCards(list, cardsToCreate)
+        .then(function(newCards) {
+          return TeamView.storeSyncedIds(trello, newCards, cardsToCreate);
+        });
+      });
     })
     .catch(function() {
       console.error(arguments);

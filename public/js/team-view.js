@@ -44,7 +44,7 @@ window.TeamView = {
     ]);
   },
 
-  getSyncView: function(trello, list) {
+  getCurrentView: function(trello, list) {
     return trello.lists('all')
     .then(function(lists) {
       var existingCards = lists.find(function(l) { return l.id == list.id}).cards;
@@ -61,30 +61,46 @@ window.TeamView = {
     });
   },
 
-  getNewCards: function(syncView, memberCards, boards) {
-    var boardIds = boards.map(function(b) { return b.id; });
-    var syncedIds = Object.keys(syncView);
-    var newCards = memberCards.filter(function(c) { 
-      return boardIds.includes(c.idBoard) && !syncedIds.includes(c.id);
-    });
-    return newCards;
-  },
-
-  getStaleCards: function(syncView, memberCards) {
+  splitCards: function(currentView, memberCards, boards) {
+    var syncedIds = Object.keys(currentView);
     var cardIds = memberCards.map(function(c) { return c.id; });
-    var staleCards = [];
-    Object.keys(syncView).forEach(function(id) {
-      if (!cardIds.includes(id)) {
-        staleCards.push(syncView[id]);
+    var boardIds = boards.map(function(b) { return b.id; });
+    
+    var result = {
+      missing: [],
+      changed: [],
+      added: memberCards.filter(function(c) { 
+        return boardIds.includes(c.idBoard) && !syncedIds.includes(c.id);
+      })
+    };
+
+    syncedIds.forEach(function(id) {
+      var c = cardIds.indexOf(id)
+      if (c < 0) {
+        result.missing.push(currentView[id]);
+      }
+      else if (currentView[id].name != memberCards[c].name) {
+        result.changed.push([currentView[id], memberCards[c]]);
       }
     });
-    return staleCards;
+    
+    return result;
   },
 
   deleteCards: function(cardsToDelete) {
     return Promise.all(cardsToDelete.map(function(card) {
       return new Promise(function(resolve, reject) {
         Trello.delete('/cards/' + card.id, resolve, reject);
+      });
+    }));
+  },
+
+  updateCards: function(cardsToUpdate) {
+    return Promise.all(cardsToUpdate.map(function(pair) {
+      var old = pair[0],
+          recent = pair[1];
+      return new Promise(function(resolve, reject) {
+        Trello.put('/cards/' + old.id, { name: recent.name }, resolve, reject);
       });
     }));
   },
@@ -122,16 +138,18 @@ window.TeamView = {
       var memberCards = values[0],
           boards = values[1],
           list = values[2];
-      return TeamView.getSyncView(trello, list)
-      .then(function(syncView) {
-        var cardsToCreate = TeamView.getNewCards(syncView, memberCards, boards);
-        var cardsToUnsync = TeamView.getStaleCards(syncView, memberCards);
-        return TeamView.deleteCards(cardsToUnsync)
+      return TeamView.getCurrentView(trello, list)
+      .then(function(currentView) {
+        var cardsByStatus = TeamView.splitCards(currentView, memberCards, boards);
+        return TeamView.deleteCards(cardsByStatus.missing)
         .then(function() {
-          return TeamView.createCards(list, cardsToCreate);
+          return TeamView.updateCards(cardsByStatus.changed);
+        })
+        .then(function() {
+          return TeamView.createCards(list, cardsByStatus.added);
         })
         .then(function(newCards) {
-          return TeamView.storeSyncedIds(trello, newCards, cardsToCreate);
+          return TeamView.storeSyncedIds(trello, newCards, cardsByStatus.added);
         });
       });
     })

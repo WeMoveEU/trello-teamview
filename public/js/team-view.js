@@ -44,14 +44,49 @@ window.TeamView = {
     ]);
   },
 
-  getExistingIds: function(trello, list) {
+  getSyncView: function(trello, list) {
     return trello.lists('all')
     .then(function(lists) {
       var existingCards = lists.find(function(l) { return l.id == list.id}).cards;
+      var result = {};
       return Promise.all(existingCards.map(function(card) {
         return trello.get(card.id, 'shared', 'teamview_syncedId');
-      }));
+      }))
+      .then(function(syncedIds) {
+        syncedIds.forEach(function(id, i) {
+          result[id] = existingCards[i];
+        });
+        return result;
+      });
     });
+  },
+
+  getNewCards: function(syncView, memberCards, boards) {
+    var boardIds = boards.map(function(b) { return b.id; });
+    var syncedIds = Object.keys(syncView);
+    var newCards = memberCards.filter(function(c) { 
+      return boardIds.includes(c.idBoard) && !syncedIds.includes(c.id);
+    });
+    return newCards;
+  },
+
+  getStaleCards: function(syncView, memberCards) {
+    var cardIds = memberCards.map(function(c) { return c.id; });
+    var staleCards = [];
+    Object.keys(syncView).forEach(function(id) {
+      if (!cardIds.includes(id)) {
+        staleCards.push(syncView[id]);
+      }
+    });
+    return staleCards;
+  },
+
+  deleteCards: function(cardsToDelete) {
+    return Promise.all(cardsToDelete.map(function(card) {
+      return new Promise(function(resolve, reject) {
+        Trello.delete('/cards/' + card.id, resolve, reject);
+      });
+    }));
   },
 
   createCards: function(list, cardsToCreate) {
@@ -83,17 +118,18 @@ window.TeamView = {
           team = values[1];
       return TeamView.getSyncData(trello, member, team);
     })
-    .then(function (values) {
-      var cards = values[0],
+    .then(function(values) {
+      var memberCards = values[0],
           boards = values[1],
           list = values[2];
-      var boardIds = boards.map(function(b) { return b.id; });
-      return TeamView.getExistingIds(trello, list)
-      .then(function(existingIds) {
-        var cardsToCreate = cards.filter(function(c) { 
-          return boardIds.includes(c.idBoard) && !existingIds.includes(c.id);
-        });
-        return TeamView.createCards(list, cardsToCreate)
+      return TeamView.getSyncView(trello, list)
+      .then(function(syncView) {
+        var cardsToCreate = TeamView.getNewCards(syncView, memberCards, boards);
+        var cardsToUnsync = TeamView.getStaleCards(syncView, memberCards);
+        return TeamView.deleteCards(cardsToUnsync)
+        .then(function() {
+          return TeamView.createCards(list, cardsToCreate);
+        })
         .then(function(newCards) {
           return TeamView.storeSyncedIds(trello, newCards, cardsToCreate);
         });

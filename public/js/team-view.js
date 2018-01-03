@@ -2,6 +2,8 @@ var Promise = TrelloPowerUp.Promise;
 
 window.TeamView = {
 
+  listFilters: ['mocha', 'done'],
+
   checkAuth: function() {
     return new Promise(function(resolve, reject) {
       Trello.authorize({
@@ -36,6 +38,20 @@ window.TeamView = {
     });
     var teamBoards = new Promise(function(resolve, reject) {
       Trello.get('/organizations/' + team.id + '/boards', resolve, reject);
+    })
+    .then(function(boards) {
+      return Promise.all(boards.map(function(board) {
+        return new Promise(function(resolve, reject) {
+          Trello.get('/boards/' + board.id + '/lists',
+            { fields: 'id,name' },
+            function(lists) {
+              board.lists = lists;
+              resolve(board);
+            },
+            reject
+          );
+        });
+      }));
     });
     return Promise.all([
       memberCards,
@@ -65,23 +81,33 @@ window.TeamView = {
     });
   },
 
+  isSyncable: function(card, boardIds, lists) {
+    return boardIds.includes(card.idBoard) && !TeamView.listFilters.includes(lists[card.idList].name.toLowerCase());
+  },
+
   splitCards: function(currentView, memberCards, boards) {
     var syncedIds = Object.keys(currentView);
     var cardIds = memberCards.map(function(c) { return c.id; });
     var boardIds = boards.map(function(b) { return b.id; });
+    var lists = [];
+    boards.forEach(function(board) {
+      board.lists.forEach(function(list) {
+        lists[list.id] = list;
+      });
+    });
     
     var result = {
       missing: [],
       changed: [],
       added: memberCards.filter(function(c) { 
-        return boardIds.includes(c.idBoard) && !syncedIds.includes(c.id);
+        return TeamView.isSyncable(c, boardIds, lists) && !syncedIds.includes(c.id);
       })
     };
 
     syncedIds.forEach(function(id) {
       if (id !== 'none') {
         var c = cardIds.indexOf(id)
-        if (c < 0) {
+        if (c < 0 || !TeamView.isSyncable(memberCards[c], boardIds, lists)) {
           result.missing.push(currentView[id]);
         }
         else if (currentView[id].name != memberCards[c].name) {

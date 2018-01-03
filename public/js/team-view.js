@@ -48,13 +48,17 @@ window.TeamView = {
     return trello.lists('all')
     .then(function(lists) {
       var existingCards = lists.find(function(l) { return l.id == list.id}).cards;
-      var result = {};
+      var result = { none: [] };
       return Promise.all(existingCards.map(function(card) {
         return trello.get(card.id, 'shared', 'teamview_syncedId');
       }))
       .then(function(syncedIds) {
         syncedIds.forEach(function(id, i) {
-          result[id] = existingCards[i];
+          if (id) {
+            result[id] = existingCards[i];
+          } else {
+            result['none'].push(existingCards[i]);
+          }
         });
         return result;
       });
@@ -75,12 +79,14 @@ window.TeamView = {
     };
 
     syncedIds.forEach(function(id) {
-      var c = cardIds.indexOf(id)
-      if (c < 0) {
-        result.missing.push(currentView[id]);
-      }
-      else if (currentView[id].name != memberCards[c].name) {
-        result.changed.push([currentView[id], memberCards[c]]);
+      if (id !== 'none') {
+        var c = cardIds.indexOf(id)
+        if (c < 0) {
+          result.missing.push(currentView[id]);
+        }
+        else if (currentView[id].name != memberCards[c].name) {
+          result.changed.push([currentView[id], memberCards[c]]);
+        }
       }
     });
     

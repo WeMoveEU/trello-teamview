@@ -4,6 +4,8 @@ window.TeamView = {
 
   listFilters: ['mocha', 'done'],
 
+  context: null,
+
   checkAuth: function() {
     return new Promise(function(resolve, reject) {
       Trello.authorize({
@@ -26,13 +28,27 @@ window.TeamView = {
   },
 
   getContext: function(trello) {
-    return Promise.all([
-      trello.member('id'),
-      trello.organization('id')
-    ]);
+    if (TeamView.context) {
+      return Promise.resolve(TeamView.context);
+    }
+    else {
+      return Promise.all([
+        trello.member('id'),
+        trello.organization('id'),
+        trello.get('board', 'shared', 'teamview_config')
+      ])
+      .then(function(values) {
+        TeamView.context = {
+          member: values[0],
+          team: values[1],
+          config: values[2]
+        };
+        return Promise.resolve(TeamView.context);
+      });
+    }
   },
 
-  getSyncData: function(trello, member, team) {
+  getSyncData: function(member, team) {
     var memberCards = new Promise(function(resolve, reject) {
       Trello.get('/members/' + member.id + '/cards', resolve, reject);
     });
@@ -55,8 +71,7 @@ window.TeamView = {
     });
     return Promise.all([
       memberCards,
-      teamBoards,
-      trello.get('member', 'shared', 'teamview_list')
+      teamBoards
     ]);
   },
 
@@ -161,15 +176,13 @@ window.TeamView = {
 
   doSync: function(trello) {
     return TeamView.getContext(trello)
-    .then(function(values) {
-      var member = values[0],
-          team = values[1];
-      return TeamView.getSyncData(trello, member, team);
+    .then(function(context) {
+      return TeamView.getSyncData(context.member, context.team);
     })
     .then(function(values) {
       var memberCards = values[0],
           boards = values[1],
-          list = values[2];
+          list = TeamView.context.config.memberLists[TeamView.context.member.id];
       return TeamView.getCurrentView(trello, list)
       .then(function(currentView) {
         var cardsByStatus = TeamView.splitCards(currentView, memberCards, boards);

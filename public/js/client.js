@@ -9,7 +9,10 @@ function listPicker(trello, opts) {
       return {
         text: item.name,
         callback: function(trello, opts) {
-          trello.set('member', 'shared', 'teamview_list', item);
+          var ctx = TeamView.context;
+          ctx.config = ctx.config || { memberLists: {} };
+          ctx.config.memberLists[ctx.member.id] = item;
+          trello.set('board', 'shared', 'teamview_config', ctx.config);
           return trello.closePopup();
         }
       };
@@ -26,9 +29,10 @@ function listPicker(trello, opts) {
 }
 
 function onBoardButtonClick(trello, opts) {
-  return trello.get('member', 'shared', 'teamview_list')
-  .then(function(list) {
+  return TeamView.getContext(trello)
+  .then(function(context) {
     var buttonText = 'Set your list';
+    var list = context.config && context.config.memberLists[context.member.id];
     if (list) {
       buttonText = 'Your list: ' + list.name;
     }

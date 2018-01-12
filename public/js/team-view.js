@@ -170,6 +170,7 @@ window.TeamView = {
 
   storeSyncedIds: function(trello, newCards, cardsToCreate) {
     return Promise.all(newCards.map(function(card, c) {
+      console.log("Will associate card " + card.id + " to card " + cardsToCreate[c].id);
       return trello.set(card.id, 'shared', 'teamview_syncedId', cardsToCreate[c].id);
     }));
   },
@@ -198,8 +199,8 @@ window.TeamView = {
         });
       });
     })
-    .catch(function() {
-      console.error(arguments);
+    .catch(function(e) {
+      console.error(e.message ? e.message : e);
     });
   },
 

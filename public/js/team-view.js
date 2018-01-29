@@ -48,27 +48,35 @@ window.TeamView = {
     }
   },
 
-  getSyncData: function(member, team) {
+  getSyncData: function(memberId, team) {
     var memberCards = new Promise(function(resolve, reject) {
-      Trello.get('/members/' + member.id + '/cards', resolve, reject);
+      Trello.get('/members/' + memberId + '/cards', resolve, reject);
     });
-    var teamBoards = new Promise(function(resolve, reject) {
-      Trello.get('/organizations/' + team.id + '/boards', resolve, reject);
-    })
-    .then(function(boards) {
-      return Promise.all(boards.map(function(board) {
-        return new Promise(function(resolve, reject) {
-          Trello.get('/boards/' + board.id + '/lists',
-            { fields: 'id,name' },
-            function(lists) {
-              board.lists = lists;
-              resolve(board);
-            },
-            reject
-          );
-        });
-      }));
-    });
+    if (TeamView.boards) {
+      var teamBoards = Promise.resolve(TeamView.boards);
+    } else {
+      var teamBoards = new Promise(function(resolve, reject) {
+        Trello.get('/organizations/' + team.id + '/boards', resolve, reject);
+      })
+      .then(function(boards) {
+        return Promise.all(boards.map(function(board) {
+          return new Promise(function(resolve, reject) {
+            Trello.get('/boards/' + board.id + '/lists',
+              { fields: 'id,name' },
+              function(lists) {
+                board.lists = lists;
+                resolve(board);
+              },
+              reject
+            );
+          });
+        }));
+      })
+      .then(function(boards) {
+        TeamView.boards = boards;
+        return Promise.resolve(boards);
+      });
+    }
     return Promise.all([
       memberCards,
       teamBoards
@@ -170,20 +178,16 @@ window.TeamView = {
 
   storeSyncedIds: function(trello, newCards, cardsToCreate) {
     return Promise.all(newCards.map(function(card, c) {
-      console.log("Will associate card " + card.id + " to card " + cardsToCreate[c].id);
       return trello.set(card.id, 'shared', 'teamview_syncedId', cardsToCreate[c].id);
     }));
   },
 
-  doSync: function(trello) {
-    return TeamView.getContext(trello)
-    .then(function(context) {
-      return TeamView.getSyncData(context.member, context.team);
-    })
+  syncMember: function(trello, memberId) {
+    return TeamView.getSyncData(memberId, TeamView.context.team)
     .then(function(values) {
       var memberCards = values[0],
           boards = values[1],
-          list = TeamView.context.config.memberLists[TeamView.context.member.id];
+          list = TeamView.context.config.memberLists[memberId];
       return TeamView.getCurrentView(trello, list)
       .then(function(currentView) {
         var cardsByStatus = TeamView.splitCards(currentView, memberCards, boards);
@@ -195,8 +199,23 @@ window.TeamView = {
           return TeamView.createCards(list, cardsByStatus.added);
         })
         .then(function(newCards) {
+          return new Promise(function(resolve, reject) {
+            console.log("Waiting a bit before storing metadata...");
+            setTimeout(function(){ resolve(newCards); }, 500);
+          });
+        })
+        .then(function(newCards) {
           return TeamView.storeSyncedIds(trello, newCards, cardsByStatus.added);
         });
+      });
+    });
+  },
+
+  doSync: function(trello) {
+    return TeamView.getContext(trello)
+    .then(function(context) {
+      return Promise.reduce(Object.getOwnPropertyNames(context.config.memberLists), function(_, memberId) {
+        return TeamView.syncMember(trello, memberId);
       });
     })
     .catch(function(e) {

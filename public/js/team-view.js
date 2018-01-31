@@ -214,7 +214,11 @@ window.TeamView = {
   doSync: function(trello) {
     return TeamView.getContext(trello)
     .then(function(context) {
-      return Promise.reduce(Object.getOwnPropertyNames(context.config.memberLists), function(_, memberId) {
+      //We use the below mecanism instead of Promise.all so that the promises are resolved sequentially
+      //This is to avoid any race on retrieving and caching the team boards
+      var members = Object.getOwnPropertyNames(context.config.memberLists);
+      members[0] = TeamView.syncMember(trello, members[0]);
+      return Promise.reduce(members, function(_, memberId) {
         return TeamView.syncMember(trello, memberId);
       });
     })

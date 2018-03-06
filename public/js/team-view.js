@@ -166,6 +166,7 @@ window.TeamView = {
         Trello.post('/cards',
           { 
             idList: list.id, 
+            pos: 'top',
             name: card.name,
             desc: "Created from " + card.url
           },

@@ -59,6 +59,7 @@ window.TeamView = {
         Trello.get('/organizations/' + team.id + '/boards', resolve, reject);
       })
       .then(function(boards) {
+        boards = boards.filter(function(b) { return !b.closed; });
         return Promise.all(boards.map(function(board) {
           return new Promise(function(resolve, reject) {
             Trello.get('/boards/' + board.id + '/lists',
